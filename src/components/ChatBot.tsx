@@ -136,7 +136,7 @@ export default function ChatBot() {
     }
   };
 
-
+//fetching
   const handleOptionClick = (label: string) => {
     const actualQuery = optionMap.get(label);
     if (actualQuery) {
