@@ -16,7 +16,6 @@ export default function ChatBot() {
 
       if (existingSession) {
         setSessionId(existingSession);
-       // await loadHistory(existingSession);
       } else {
         // Create a new session
         try {
