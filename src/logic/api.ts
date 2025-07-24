@@ -8,7 +8,7 @@ export async function fetchTopQueries(): Promise<string[]> {
 
 export interface BotReply {
   reply: string;
-  options: { label: string; query: any }[];
+  options: { label: string; query: string }[];
   sessionId: string;
 }
 
