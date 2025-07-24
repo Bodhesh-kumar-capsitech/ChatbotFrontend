@@ -1,4 +1,5 @@
 export interface ChatMessage {
+  isInitial: any;
   sender: 'user' | 'bot';
   text: string;
 }
