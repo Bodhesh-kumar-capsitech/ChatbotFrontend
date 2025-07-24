@@ -1,87 +1,34 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { ChatMessage, Option } from '../logic/type';
 
-
-
 export default function ChatBot() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const chatRef = useRef<HTMLDivElement>(null);
   const [optionMap, setOptionMap] = useState<Map<string, string>>(new Map());
+  const [historyStack, setHistoryStack] = useState<
+    { messages: ChatMessage[]; optionMap: Map<string, string> }[]
+  >([]);
+
 
   useEffect(() => {
     const initChat = async () => {
-      const existingSession = localStorage.getItem('chatbot_session');
+      try {
+        const res = await fetch('http://localhost:5096/api/chat/history', {
+          method: 'POST',
 
-      if (existingSession) {
-        setSessionId(existingSession);
-      } else {
-        // Create a new session
-        try {
-          const res = await fetch('http://localhost:5096/api/chat/session', {
-            method: 'POST',
-          });
-          const data = await res.json();
-          const sid = data.sessionId;
+        });
+        const data = await res.json();
+        const sid = data.sessionId;
 
-          setSessionId(sid);
-          //localStorage.setItem('chatbot_session', sid);
-
-          // Send initial query
-          await sendMessage('How do I apply?', true);
-        } catch (err) {
-          console.error('Session creation failed:', err);
-        }
+        setSessionId(sid);
+      } catch (err) {
+        console.error('Session creation failed:', err);
       }
-    };
-
+    }
     initChat();
   }, []);
-
-
-
-
-
-  // const loadHistory = async (session: string) => {
-  //   try {
-  //     const res = await fetch('http://localhost:5096/api/chat/history', {
-  //       method: 'POST',
-  //       headers: { 'Content-Type': 'application/json' },
-  //       body: JSON.stringify({ sessionId: session }),
-  //     });
-
-  //     const data = await res.json();
-
-  //     if (data.status && data.result.conversation) {
-  //       const loaded: ChatMessage[] = data.result.conversation.map((item: any) => ({
-  //         sender: item.sender.toLowerCase(),
-  //         text: item.text,
-  //       }));
-
-  //       setMessages(loaded);
-
-  //       // Restore options
-  //       const map = new Map();
-  //       if (data.result.options) {
-  //         data.result.options.forEach((opt: Option) => {
-  //           map.set(opt.label, opt.query.query);
-  //         });
-  //       }
-  //       setOptionMap(map);
-
-  //       // Auto scroll
-  //       setTimeout(() => {
-  //         chatRef.current?.scrollTo(0, chatRef.current.scrollHeight);
-  //       }, 100);
-  //     }
-  //   } catch (err) {
-  //     console.error('Failed to load history:', err);
-  //   }
-  // };
-
-
-
 
   const sendMessage = async (query: string, isInitial = false) => {
     if (!query.trim()) return;
@@ -92,14 +39,16 @@ export default function ChatBot() {
     }
 
     try {
-      const res = await fetch(`http://localhost:5096/api/chat/reply?query=${encodeURIComponent(query)}&sessionId=${newSession}`);
+      const res = await fetch(
+        `http://localhost:5096/api/chat/reply?query=${encodeURIComponent(query)}&sessionId=${newSession}`
+      );
       const data = await res.json();
 
       if (data.status) {
         const sid = data.result.sessionId;
         if (!sessionId) {
           setSessionId(sid);
-          //localStorage.setItem('chatbot_session', sid);
+          localStorage.setItem('chatbot_session', sid);
         }
 
         const botMsg: ChatMessage = {
@@ -111,40 +60,62 @@ export default function ChatBot() {
 
         const options = data.result.options as Option[];
         if (options?.length) {
-          const map = new Map(optionMap); // clone previous map
+          const map = new Map(optionMap);
+          const optionMessages: ChatMessage[] = [];
+
           options.forEach((opt) => {
             map.set(opt.label, opt.query.query);
-            setMessages((prev) => [
-              ...prev,
-              {
-                sender: 'bot',
-                text: opt.label,
-              },
-            ]);
+            optionMessages.push({
+              sender: 'bot',
+              text: opt.label,
+            });
           });
+
           setOptionMap(map);
+          setMessages((prev) => [...prev, ...optionMessages]);
         }
       } else {
-        setMessages((prev) => [...prev, { sender: 'bot', text: data.result?.reply || 'Unknown error' }]);
+        setMessages((prev) => [
+          ...prev,
+          { sender: 'bot', text: data.result?.reply || 'Unknown error' },
+        ]);
       }
     } catch (err) {
       setMessages((prev) => [...prev, { sender: 'bot', text: 'Network error.' }]);
     } finally {
       if (!isInitial) setInput('');
-      setTimeout(() => chatRef.current?.scrollTo(0, chatRef.current.scrollHeight), 100);
+      scrollToBottom();
     }
   };
 
-//fetching
+  const scrollToBottom = () => {
+    setTimeout(() => {
+      chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight, behavior: 'smooth' });
+    }, 100);
+  };
+
   const handleOptionClick = (label: string) => {
     const actualQuery = optionMap.get(label);
     if (actualQuery) {
-      sendMessage(actualQuery); // ✅ Use the real query
+      setHistoryStack((prev) => [
+        ...prev,
+        { messages: [...messages], optionMap: new Map(optionMap) },
+      ]);
+      sendMessage(actualQuery);
     } else {
-      sendMessage(label); // fallback
+      sendMessage(label);
     }
   };
 
+  const handleBack = () => {
+    if (historyStack.length === 0) return;
+
+    const last = historyStack[historyStack.length - 1];
+    setMessages(last.messages);
+    setOptionMap(last.optionMap);
+    setHistoryStack((prev) => prev.slice(0, -1)); // pop
+    scrollToBottom();
+  };
 
   const handleSubmit = (e: Event) => {
     e.preventDefault();
@@ -159,7 +130,6 @@ export default function ChatBot() {
       </div>
 
       {/* Chat Window */}
-
       <div
         className="flex-1 overflow-y-auto px-4 py-3 space-y-3 bg-gray-50 scroll-smooth"
         ref={chatRef}
@@ -167,10 +137,10 @@ export default function ChatBot() {
         {messages.map((msg, idx) => (
           <div
             key={idx}
-            className={`max-w-[75%] px-4 py-2 rounded-xl text-sm break-words cursor-pointer transition-all duration-150
-        ${msg.sender === 'user'
+            className={`max-w-[75%] px-4 py-2 rounded-xl text-sm break-words transition-all duration-150
+              ${msg.sender === 'user'
                 ? 'bg-blue-100 text-blue-900 self-end ml-auto'
-                : 'bg-gray-200 text-gray-800 self-start mr-auto'
+                : 'bg-gray-200 text-gray-800 self-start mr-auto hover:bg-gray-300 cursor-pointer'
               }`}
             onClick={() => {
               if (optionMap.has(msg.text)) {
@@ -181,8 +151,16 @@ export default function ChatBot() {
             {msg.text}
           </div>
         ))}
-      </div>
 
+        {historyStack.length > 0 && (
+          <button
+            onClick={handleBack}
+            className="mt-2 text-sm text-blue-600 hover:underline self-start"
+          >
+            ← Back
+          </button>
+        )}
+      </div>
 
       {/* Input Form */}
       <form
@@ -205,5 +183,4 @@ export default function ChatBot() {
       </form>
     </div>
   );
-
 }
