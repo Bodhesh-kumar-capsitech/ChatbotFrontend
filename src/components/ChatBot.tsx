@@ -169,6 +169,7 @@ export default function ChatBot() {
       return;
     }
     sendMessage(input);
+    scrollToBottom();
   };
 
   return (
