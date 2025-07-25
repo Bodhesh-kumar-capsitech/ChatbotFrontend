@@ -8,8 +8,13 @@ export default function ChatBot() {
   const chatRef = useRef<HTMLDivElement>(null);
   const [optionMap, setOptionMap] = useState<Map<string, string>>(new Map());
   const [historyStack, setHistoryStack] = useState<
-    { messages: ChatMessage[]; optionMap: Map<string, string> }[]
+    {
+      messages: ChatMessage[];
+      optionMap: Map<string, string>;
+      clickedOptions: Set<string>;
+    }[]
   >([]);
+
   const [clickedOptions, setClickedOptions] = useState<Set<string>>(new Set());
 
 
@@ -52,8 +57,13 @@ export default function ChatBot() {
 
       setHistoryStack(prev => [
         ...prev,
-        { messages: [...messages], optionMap: new Map(optionMap) }
+        {
+          messages: [...messages],
+          optionMap: new Map(optionMap),
+          clickedOptions: new Set(clickedOptions),
+        },
       ]);
+
     }
 
     if (!query.trim()) return;
@@ -118,30 +128,37 @@ export default function ChatBot() {
     }, 100);
   };
 
-  const handleOptionClick = (label: string) => {
-
+  const handleOptionClick = (label: string, idx: number) => {
     const actualQuery = optionMap.get(label);
 
+    // Store state before navigating
+    setHistoryStack(prev => [
+      ...prev,
+      {
+        messages: [...messages],
+        optionMap: new Map(optionMap),
+        clickedOptions: new Set(clickedOptions),
+      },
+    ]);
 
-    if (actualQuery) {
-      setHistoryStack((prev) => [
-        ...prev,
-        { messages: [...messages], optionMap: new Map(optionMap) },
-      ]);
+    // Mark this option as clicked
+    setClickedOptions(prev => {
+      const updated = new Set(prev);
+      updated.add(`${label}-${idx}`);
+      return updated;
+    });
 
-      const botQueryMsg: ChatMessage = {
-        sender: 'bot',
-        text: actualQuery,
-        isInitial: undefined
-      };
+    const botQueryMsg: ChatMessage = {
+      sender: 'bot',
+      text: actualQuery || label,
+      isInitial: undefined,
+    };
 
-      setMessages((prev) => [...prev, botQueryMsg]);
+    setMessages((prev) => [...prev, botQueryMsg]);
 
-      sendMessage(actualQuery);
-    } else {
-      sendMessage(label);
-    }
+    sendMessage(actualQuery || label);
   };
+
 
   const handleBack = () => {
     if (historyStack.length === 0) return;
@@ -149,6 +166,7 @@ export default function ChatBot() {
     const last = historyStack[historyStack.length - 1];
     setMessages(last.messages);
     setOptionMap(last.optionMap);
+    setClickedOptions(new Set(last.clickedOptions));
     setHistoryStack(prev => prev.slice(0, -1));
     scrollToBottom();
   };
@@ -174,30 +192,38 @@ export default function ChatBot() {
         ref={chatRef}
       >
         {messages.map((msg, idx) => {
+          const optionKey = `${msg.text}-${idx}`; // Unique key for this option
 
           return (
             <div
               key={idx}
               className={`max-w-[75%] px-4 py-2 rounded-xl text-sm break-words transition-all duration-150
-    ${msg.sender === 'user'
+        ${msg.sender === 'user'
                   ? msg.isInitial
                     ? 'bg-blue-100 text-blue-900 self-end ml-auto hover:bg-gray-300 cursor-pointer'
                     : 'bg-gray-200 text-black self-end ml-auto'
                   : 'bg-gray-200 text-gray-800 self-start mr-auto'
-                }`}
+                }
+        ${msg.isInitial && clickedOptions.has(optionKey) ? 'opacity-50 pointer-events-none' : ''}
+      `}
               onClick={() => {
-                // Only handle clicks if it's a selectable option (isInitial)
-                if (msg.isInitial && !clickedOptions.has(msg.text)) {
-                  setClickedOptions(prev => new Set(prev).add(msg.text));
+                if (msg.isInitial && !clickedOptions.has(optionKey)) {
+                  setClickedOptions(prev => {
+                    const updated = new Set(prev);
+                    updated.add(optionKey);
+                    return updated;
+                  });
 
                   const actualQuery = optionMap.get(msg.text);
                   if (actualQuery) {
                     sendMessage(actualQuery);
                   } else if (msg.sender === 'user') {
-                    handleOptionClick(msg.text);
+                    handleOptionClick(msg.text, idx);
                   }
                 }
               }}
+
+
             >
               {msg.text}
             </div>
