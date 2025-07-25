@@ -6,9 +6,7 @@ export default function ChatBot() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const chatRef = useRef<HTMLDivElement>(null);
-  // Map option label -> actual query string
   const [optionMap, setOptionMap] = useState<Map<string, string>>(new Map());
-  // History for back navigation
   const [historyStack, setHistoryStack] = useState<
     { messages: ChatMessage[]; optionMap: Map<string, string> }[]
   >([]);
@@ -17,25 +15,22 @@ export default function ChatBot() {
 
 
   useEffect(() => {
-    // Initialize chat: fetch welcome + default user queries from backend
     const startChat = async () => {
       try {
         const res = await fetch("http://localhost:5096/api/chat/start");
         const data = await res.json();
 
         if (data.status) {
-          // Show bot's initial welcome message
           setMessages([{
             text: data.result.reply,
             sender: "bot",
-            isInitial: String
+            isInitial: false
           }]);
 
-          // Add default queries as clickable user messages (isInitial=true)
           const defaultUserMessages = data.result.defaultQueries.map((query: string) => ({
             text: query,
             sender: "user",
-            isInitial: true, // Mark: Not real user input yet but clickable
+            isInitial: true,
           }));
           setMessages(prev => [...prev, ...defaultUserMessages]);
         }
@@ -49,6 +44,12 @@ export default function ChatBot() {
 
   const sendMessage = async (query: string, isInitial = false) => {
     if (!isInitial) {
+      setMessages(prev => [
+        ...prev,
+        { sender: 'user', text: query, isInitial: false } // ✅ now it's a normal message
+      ]);
+
+
       setHistoryStack(prev => [
         ...prev,
         { messages: [...messages], optionMap: new Map(optionMap) }
@@ -87,9 +88,9 @@ export default function ChatBot() {
           options.forEach((opt) => {
             map.set(opt.label, opt.query.query);
             optionMessages.push({
-              sender: 'user',      // <-- Show options as user messages
+              sender: 'user',
               text: opt.label,
-              isInitial: true      // <-- Mark as initial for click handler
+              isInitial: true
             });
           });
 
@@ -111,47 +112,37 @@ export default function ChatBot() {
   };
 
 
-  // Scroll chat window to bottom
   const scrollToBottom = () => {
     setTimeout(() => {
       chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight, behavior: 'smooth' });
     }, 100);
   };
 
-  // When user clicks on option or default query, treat it as sending a message
   const handleOptionClick = (label: string) => {
 
     const actualQuery = optionMap.get(label);
 
-    // If this is not an initial option, save history and show user message
-    // (Assume this function is only called for initial options, so this block can be removed)
 
     if (actualQuery) {
-      // Save current state for back button
       setHistoryStack((prev) => [
         ...prev,
         { messages: [...messages], optionMap: new Map(optionMap) },
       ]);
 
-      // Show the actual query on bot side (left)
       const botQueryMsg: ChatMessage = {
-        sender: 'bot',      // bot side
-        text: actualQuery,  // show actual query text from option
+        sender: 'bot',
+        text: actualQuery,
         isInitial: undefined
       };
 
-      // Add the bot message first, then send query to backend to get reply
       setMessages((prev) => [...prev, botQueryMsg]);
 
-      // Then trigger backend call for this query
       sendMessage(actualQuery);
     } else {
-      // fallback, send label as user message
       sendMessage(label);
     }
   };
 
-  // Back button handler to restore history
   const handleBack = () => {
     if (historyStack.length === 0) return;
 
@@ -164,6 +155,9 @@ export default function ChatBot() {
 
   const handleSubmit = (e: Event) => {
     e.preventDefault();
+    if (!input.trim()) {
+      return;
+    }
     sendMessage(input);
   };
 
@@ -180,40 +174,34 @@ export default function ChatBot() {
         ref={chatRef}
       >
         {messages.map((msg, idx) => {
-          const isOption = msg.sender === 'bot' && optionMap.has(msg.text);
 
           return (
             <div
               key={idx}
               className={`max-w-[75%] px-4 py-2 rounded-xl text-sm break-words transition-all duration-150
-        ${msg.sender === 'user'
-                  ? 'bg-blue-100 text-blue-900 self-end ml-auto hover:bg-gray-300 cursor-pointer'
-                  : `bg-gray-200 text-gray-800 self-start mr-auto}`
+    ${msg.sender === 'user'
+                  ? msg.isInitial
+                    ? 'bg-blue-100 text-blue-900 self-end ml-auto hover:bg-gray-300 cursor-pointer'
+                    : 'bg-gray-200 text-black self-end ml-auto'
+                  : 'bg-gray-200 text-gray-800 self-start mr-auto'
                 }`}
               onClick={() => {
-                if (isOption && !clickedOptions.has(msg.text)) {
-                  // Mark this option as clicked
+                // Only handle clicks if it's a selectable option (isInitial)
+                if (msg.isInitial && !clickedOptions.has(msg.text)) {
                   setClickedOptions(prev => new Set(prev).add(msg.text));
 
-                  // If this is a clickable bot option, send the actual query linked to this label
                   const actualQuery = optionMap.get(msg.text);
                   if (actualQuery) {
                     sendMessage(actualQuery);
+                  } else if (msg.sender === 'user') {
+                    handleOptionClick(msg.text);
                   }
-                } else if (
-                  msg.sender === 'user' &&
-                  msg.isInitial &&
-                  !clickedOptions.has(msg.text)
-                ) {
-                  // Prevent double click on initial user suggestions
-                  setClickedOptions(prev => new Set(prev).add(msg.text));
-                  handleOptionClick(msg.text);
                 }
               }}
-
             >
               {msg.text}
             </div>
+
           );
         })}
 
