@@ -47,79 +47,79 @@ export default function ChatBot() {
     startChat();
   }, []);
 
+  
+
   const sendMessage = async (query: string, isInitial = false) => {
     if (!isInitial) {
-      setMessages(prev => [
-        ...prev,
-        { sender: 'user', text: query, isInitial: false } // ✅ now it's a normal message
-      ]);
+        setMessages(prev => [
+            ...prev,
+            { sender: 'user', text: query, isInitial: false }
+        ]);
 
-
-      setHistoryStack(prev => [
-        ...prev,
-        {
-          messages: [...messages],
-          optionMap: new Map(optionMap),
-          clickedOptions: new Set(clickedOptions),
-        },
-      ]);
-
+        setHistoryStack(prev => [
+            ...prev,
+            {
+                messages: [...messages],
+                optionMap: new Map(optionMap),
+                clickedOptions: new Set(clickedOptions),
+            },
+        ]);
     }
 
     if (!query.trim()) return;
 
     const newSession = sessionId || '';
     try {
-      const res = await fetch(
-        `http://localhost:5096/api/chat/reply?query=${encodeURIComponent(query)}&sessionId=${newSession}`
-      );
-      const data = await res.json();
+        const res = await fetch(
+            `http://localhost:5096/api/chat/reply?query=${encodeURIComponent(query)}&sessionId=${newSession}`
+        );
+        const data = await res.json();
 
-      if (data.status) {
-        const sid = data.result.sessionId;
-        if (!sessionId) {
-          setSessionId(sid);
-          localStorage.setItem('chatbot_session', sid);
+        if (data.status) {
+            const sid = data.result.sessionId;
+            if (!sessionId) {
+                setSessionId(sid);
+                localStorage.setItem('chatbot_session', sid);
+            }
+
+            const botMsg: ChatMessage = {
+                sender: 'bot',
+                text: data.result.reply,
+                isInitial: undefined
+            };
+
+            setMessages((prev) => [...prev, botMsg]);
+
+            const options = data.result.options as Option[];
+            if (options?.length) {
+                const map = new Map(optionMap);
+                const optionMessages: ChatMessage[] = [];
+
+                options.forEach((opt) => {
+                    map.set(opt.label, opt.query.query);
+                    optionMessages.push({
+                        sender: 'user',
+                        text: opt.label,
+                        isInitial: true
+                    });
+                });
+
+                setOptionMap(map);
+                setMessages((prev) => [...prev, ...optionMessages]);
+            }
+        } else {
+            setMessages((prev) => [
+                ...prev,
+                { sender: 'bot', text: data.result?.reply || 'Unknown error', isInitial: false },
+            ]);
         }
-
-        const botMsg: ChatMessage = {
-          sender: 'bot',
-          text: data.result.reply,
-          isInitial: undefined
-        };
-
-        setMessages((prev) => [...prev, botMsg]);
-
-        const options = data.result.options as Option[];
-        if (options?.length) {
-          const map = new Map(optionMap);
-          const optionMessages: ChatMessage[] = [];
-
-          options.forEach((opt) => {
-            map.set(opt.label, opt.query.query);
-            optionMessages.push({
-              sender: 'user',
-              text: opt.label,
-              isInitial: true
-            });
-          });
-
-          setOptionMap(map);
-          setMessages((prev) => [...prev, ...optionMessages]);
-        }
-      } else {
-        setMessages((prev) => [
-          ...prev,
-          { sender: 'bot', text: data.result?.reply || 'Unknown error', isInitial: false },
-        ]);
-      }
     } catch (err) {
-      setMessages((prev) => [...prev, { sender: 'bot', text: 'Network error.', isInitial: false }]);
+        setMessages((prev) => [...prev, { sender: 'bot', text: 'Network error.', isInitial: false }]);
     } finally {
-      if (!isInitial) setInput('');
-      scrollToBottom();
+        if (!isInitial) setInput('');
+        scrollToBottom();
     }
-  };
+};
 
 
   const scrollToBottom = () => {
@@ -133,31 +133,23 @@ export default function ChatBot() {
 
     // Store state before navigating
     setHistoryStack(prev => [
-      ...prev,
-      {
-        messages: [...messages],
-        optionMap: new Map(optionMap),
-        clickedOptions: new Set(clickedOptions),
-      },
+        ...prev,
+        {
+            messages: [...messages],
+            optionMap: new Map(optionMap),
+            clickedOptions: new Set(clickedOptions),
+        },
     ]);
 
     // Mark this option as clicked
     setClickedOptions(prev => {
-      const updated = new Set(prev);
-      updated.add(`${label}-${idx}`);
-      return updated;
+        const updated = new Set(prev);
+        updated.add(`${label}-${idx}`);
+        return updated;
     });
 
-    const botQueryMsg: ChatMessage = {
-      sender: 'bot',
-      text: actualQuery || label,
-      isInitial: undefined,
-    };
-
-    setMessages((prev) => [...prev, botQueryMsg]);
-
-    sendMessage(actualQuery || label);
-  };
+    sendMessage(actualQuery || label, true); // Pass true to indicate it's an initial query
+};
 
 
   const handleBack = () => {
@@ -192,38 +184,37 @@ export default function ChatBot() {
         ref={chatRef}
       >
         {messages.map((msg, idx) => {
-          const optionKey = `${msg.text}-${idx}`; // Unique key for this option
+  const optionKey = `${msg.text}-${idx}`; // Unique key for this option
 
-          return (
-            <div
-              key={idx}
-              className={`max-w-[75%] px-4 py-2 rounded-xl text-sm break-words transition-all duration-150
-        ${msg.sender === 'user'
-                  ? msg.isInitial
-                    ? 'bg-blue-100 text-blue-900 self-end ml-auto hover:bg-gray-300 cursor-pointer'
-                    : 'bg-gray-200 text-black self-end ml-auto'
-                  : 'bg-gray-200 text-gray-800 self-start mr-auto'
-                }
+  return (
+    <div
+      key={idx}
+      className={`max-w-[75%] px-4 py-2 rounded-xl text-sm break-words transition-all duration-150
+        ${
+          msg.sender === 'user'
+            ? msg.isInitial
+              ? 'bg-blue-100 text-blue-900 self-end ml-auto hover:bg-gray-300 cursor-pointer'
+              : 'bg-gray-200 text-black self-end ml-auto'
+            : 'bg-gray-200 text-gray-800 self-start mr-auto'
+        }
         ${msg.isInitial && clickedOptions.has(optionKey) ? 'opacity-50 pointer-events-none' : ''}
       `}
-              onClick={() => {
-                if (msg.isInitial && !clickedOptions.has(optionKey)) {
-                  setClickedOptions(prev => {
-                    const updated = new Set(prev);
-                    updated.add(optionKey);
-                    return updated;
-                  });
+      onClick={() => {
+        if (msg.isInitial && !clickedOptions.has(optionKey)) {
+          setClickedOptions(prev => {
+            const updated = new Set(prev);
+            updated.add(optionKey);
+            return updated;
+          });
 
-                  const actualQuery = optionMap.get(msg.text);
-                  if (actualQuery) {
-                    sendMessage(actualQuery);
-                  } else if (msg.sender === 'user') {
-                    handleOptionClick(msg.text, idx);
-                  }
-                }
-              }}
-
-
+          const actualQuery = optionMap.get(msg.text);
+          if (actualQuery) {
+            sendMessage(actualQuery);
+          } else if (msg.sender === 'user') {
+            handleOptionClick(msg.text, idx);
+          }
+        }
+      }}
             >
               {msg.text}
             </div>
